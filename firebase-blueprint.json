@@ -1,0 +1,45 @@
+{
+  "entities": {
+    "Category": {
+      "title": "Category",
+      "description": "A category for organizing items within a module.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "module": { "type": "string", "enum": ["inventory", "documents", "groceries", "expenses", "digital"] },
+        "parentId": { "type": "string", "description": "ID of the parent category for nested structures." },
+        "uid": { "type": "string", "description": "Owner's user ID." }
+      },
+      "required": ["name", "module", "uid"]
+    },
+    "Item": {
+      "title": "Item",
+      "description": "An individual item tracked in the system.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category_id": { "type": "string" },
+        "module": { "type": "string", "enum": ["inventory", "documents", "groceries", "expenses", "digital"] },
+        "brand": { "type": "string" },
+        "price": { "type": "number" },
+        "quantity": { "type": "number" },
+        "notes": { "type": "string" },
+        "uid": { "type": "string", "description": "Owner's user ID." },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "category_id", "module", "uid"]
+    }
+  },
+  "firestore": {
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "User-defined categories."
+    },
+    "/items/{itemId}": {
+      "schema": "Item",
+      "description": "User-defined items."
+    }
+  }
+}

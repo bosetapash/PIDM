@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "tapash.k.bose@gmail.com" && request.auth.token.email_verified == true));
+    }
+    
+    function isValidCategory(data) {
+      return data.keys().hasAll(['name', 'module', 'uid']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.module in ['inventory', 'documents', 'groceries', 'expenses', 'digital'] &&
+             data.uid == request.auth.uid;
+    }
+    
+    function isValidItem(data) {
+      return data.keys().hasAll(['name', 'category_id', 'module', 'uid']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             data.category_id is string &&
+             data.module in ['inventory', 'documents', 'groceries', 'expenses', 'digital'] &&
+             data.uid == request.auth.uid &&
+             (!('price' in data) || data.price is number) &&
+             (!('brand' in data) || (data.brand is string && data.brand.size() < 100));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    
+    match /categories/{categoryId} {
+      allow read: if isOwner(resource.data.uid);
+      allow create: if isAuthenticated() && isValidCategory(request.resource.data);
+      allow update: if isOwner(resource.data.uid) && isValidCategory(request.resource.data) && request.resource.data.uid == resource.data.uid;
+      allow delete: if isOwner(resource.data.uid);
+    }
+    
+    match /items/{itemId} {
+      allow read: if isOwner(resource.data.uid);
+      allow create: if isAuthenticated() && isValidItem(request.resource.data);
+      allow update: if isOwner(resource.data.uid) && isValidItem(request.resource.data) && request.resource.data.uid == resource.data.uid;
+      allow delete: if isOwner(resource.data.uid);
+    }
+  }
+}

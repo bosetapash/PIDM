@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Component } from 'react';
 import { 
   Package, 
   FileText, 
@@ -18,9 +18,112 @@ import {
   FolderOpen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { 
+  onAuthStateChanged, 
+  signInWithPopup, 
+  signOut, 
+  User,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword
+} from 'firebase/auth';
+import { 
+  collection, 
+  query, 
+  where, 
+  onSnapshot, 
+  addDoc, 
+  serverTimestamp,
+  doc,
+  setDoc,
+  getDocs
+} from 'firebase/firestore';
+import { auth, db, googleProvider } from './firebase';
 import { Category, Item, ModuleType } from './types';
 
-export default function App() {
+// Firestore Error Handling
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+    },
+    operationType,
+    path
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+class ErrorBoundary extends Component<any, any> {
+  state = { hasError: false, error: null };
+  
+  constructor(props: any) {
+    super(props);
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      let message = "Something went wrong.";
+      try {
+        const parsed = JSON.parse(this.state.error.message);
+        if (parsed.error && parsed.error.includes('permission')) {
+          message = "You don't have permission to perform this action.";
+        }
+      } catch (e) {}
+      
+      return (
+        <div className="h-screen flex flex-col items-center justify-center p-4 text-center">
+          <h2 className="text-2xl font-bold text-red-600 mb-2">Oops!</h2>
+          <p className="text-gray-600 mb-4">{message}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-bold"
+          >
+            Reload App
+          </button>
+        </div>
+      );
+    }
+    return (this as any).props.children;
+  }
+}
+
+function MainApp() {
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+
   const [activeModule, setActiveModule] = useState<ModuleType>('inventory');
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<Item[]>([]);
@@ -46,21 +149,76 @@ export default function App() {
   ];
 
   useEffect(() => {
-    fetchCategories();
-    fetchItems();
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUser(user);
+      setIsAuthReady(true);
+    });
+    return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (!user) return;
+
+    const q = query(collection(db, 'categories'), where('uid', '==', user.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const cats = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category));
+      setCategories(cats);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'categories');
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    let q = query(collection(db, 'items'), where('uid', '==', user.uid));
+    if (selectedCategoryId) {
+      q = query(q, where('category_id', '==', selectedCategoryId));
+    }
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const its = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Item));
+      setItems(its);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'items');
+    });
+    return () => unsubscribe();
+  }, [user, selectedCategoryId]);
+
+  const handleGoogleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error: any) {
+      setAuthError(error.message);
+    }
+  };
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    try {
+      if (authMode === 'login') {
+        await signInWithEmailAndPassword(auth, email, password);
+      } else {
+        await createUserWithEmailAndPassword(auth, email, password);
+      }
+    } catch (error: any) {
+      setAuthError(error.message);
+    }
+  };
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    setIsSettingsOpen(false);
+  };
+
   const fetchCategories = async () => {
-    const res = await fetch('/api/categories');
-    const data = await res.json();
-    setCategories(data);
+    // No longer needed due to onSnapshot
   };
 
   const fetchItems = async (catId?: string) => {
-    const url = catId ? `/api/items?categoryId=${catId}` : '/api/items';
-    const res = await fetch(url);
-    const data = await res.json();
-    setItems(data);
+    // No longer needed due to onSnapshot
   };
 
   const toggleCategory = (id: string) => {
@@ -90,7 +248,6 @@ export default function App() {
             style={{ paddingLeft: `${depth * 16 + 12}px` }}
             onClick={() => {
               setSelectedCategoryId(cat.id);
-              fetchItems(cat.id);
             }}
           >
             <div onClick={(e) => { e.stopPropagation(); toggleCategory(cat.id); }}>
@@ -122,6 +279,87 @@ export default function App() {
     { id: 'digital', name: 'Digital Assets', icon: Globe },
   ];
 
+  if (!isAuthReady) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full max-w-md bg-white rounded-3xl shadow-xl p-8"
+        >
+          <div className="text-center mb-8">
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">
+              PIDM
+            </h1>
+            <p className="text-gray-500 mt-2">Personal Inventory & Document Manager</p>
+          </div>
+
+          <form onSubmit={handleEmailAuth} className="space-y-4">
+            <div>
+              <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Email</label>
+              <input 
+                type="email" 
+                required 
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-indigo-500" 
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Password</label>
+              <input 
+                type="password" 
+                required 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-indigo-500" 
+              />
+            </div>
+            {authError && <p className="text-red-500 text-xs">{authError}</p>}
+            <button 
+              type="submit"
+              className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200"
+            >
+              {authMode === 'login' ? 'Login' : 'Sign Up'}
+            </button>
+          </form>
+
+          <div className="mt-6 flex items-center gap-4">
+            <div className="flex-1 h-px bg-gray-100"></div>
+            <span className="text-xs text-gray-400 font-bold uppercase">OR</span>
+            <div className="flex-1 h-px bg-gray-100"></div>
+          </div>
+
+          <button 
+            onClick={handleGoogleLogin}
+            className="w-full mt-6 py-3 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition-all flex items-center justify-center gap-2"
+          >
+            <Globe size={20} className="text-blue-500" />
+            Continue with Google
+          </button>
+
+          <p className="text-center mt-8 text-sm text-gray-500">
+            {authMode === 'login' ? "Don't have an account?" : "Already have an account?"}
+            <button 
+              onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
+              className="ml-2 text-indigo-600 font-bold hover:underline"
+            >
+              {authMode === 'login' ? 'Sign Up' : 'Login'}
+            </button>
+          </p>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen bg-gray-50 text-gray-900 font-sans">
       {/* Sidebar */}
@@ -151,7 +389,6 @@ export default function App() {
                     setExpandedModules(newExpanded);
                     setActiveModule(mod.id as ModuleType);
                     setSelectedCategoryId(null);
-                    fetchItems();
                   }}
                   className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all ${
                     isActive 
@@ -380,25 +617,25 @@ export default function App() {
                 <h2 className="text-2xl font-bold mb-6">Add New Item</h2>
                 <form className="grid grid-cols-2 gap-6" onSubmit={async (e) => {
                   e.preventDefault();
+                  if (!user) return;
                   const formData = new FormData(e.currentTarget);
-                  const newItem = {
-                    id: Math.random().toString(36).substr(2, 9),
-                    category_id: formData.get('category_id') as string,
-                    name: formData.get('name') as string,
-                    brand: formData.get('brand') as string,
-                    price: parseFloat(formData.get('price') as string) || 0,
-                    purchase_date: formData.get('date') as string,
-                    notes: formData.get('notes') as string,
-                  };
                   
-                  await fetch('/api/items', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(newItem),
-                  });
-                  
-                  fetchItems(selectedCategoryId || undefined);
-                  setIsAddingItem(false);
+                  try {
+                    await addDoc(collection(db, 'items'), {
+                      category_id: formData.get('category_id') as string,
+                      module: formData.get('module') as ModuleType,
+                      name: formData.get('name') as string,
+                      brand: formData.get('brand') as string,
+                      price: parseFloat(formData.get('price') as string) || 0,
+                      purchase_date: formData.get('date') as string,
+                      notes: formData.get('notes') as string,
+                      uid: user.uid,
+                      createdAt: new Date().toISOString()
+                    });
+                    setIsAddingItem(false);
+                  } catch (error) {
+                    handleFirestoreError(error, OperationType.CREATE, 'items');
+                  }
                 }}>
                   <div className="col-span-2 space-y-1">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Item Name</label>
@@ -512,23 +749,20 @@ export default function App() {
                 <h2 className="text-2xl font-bold mb-6">Add New Category</h2>
                 <form className="space-y-4" onSubmit={async (e) => {
                   e.preventDefault();
+                  if (!user) return;
                   const formData = new FormData(e.currentTarget);
-                  const newCat = {
-                    id: 'cat-' + Math.random().toString(36).substr(2, 9),
-                    name: formData.get('name') as string,
-                    module: formData.get('module') as ModuleType,
-                    parent_id: formData.get('parent_id') || null,
-                    icon: 'Folder'
-                  };
                   
-                  await fetch('/api/categories', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(newCat),
-                  });
-                  
-                  fetchCategories();
-                  setIsAddingCategory(false);
+                  try {
+                    await addDoc(collection(db, 'categories'), {
+                      name: formData.get('name') as string,
+                      module: formData.get('module') as ModuleType,
+                      parent_id: formData.get('parent_id') || null,
+                      uid: user.uid
+                    });
+                    setIsAddingCategory(false);
+                  } catch (error) {
+                    handleFirestoreError(error, OperationType.CREATE, 'categories');
+                  }
                 }}>
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Category Name</label>
@@ -608,7 +842,13 @@ export default function App() {
                       ))}
                     </div>
                   </div>
-                  <div className="pt-4 border-t border-gray-100">
+                  <div className="pt-4 border-t border-gray-100 space-y-3">
+                    <button 
+                      onClick={handleLogout}
+                      className="w-full py-3 bg-red-50 text-red-600 font-bold rounded-xl hover:bg-red-100 transition-all"
+                    >
+                      Logout
+                    </button>
                     <button 
                       onClick={() => setIsSettingsOpen(false)}
                       className="w-full py-3 bg-gray-900 text-white font-bold rounded-xl hover:bg-black transition-all"
@@ -623,5 +863,13 @@ export default function App() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <MainApp />
+    </ErrorBoundary>
   );
 }

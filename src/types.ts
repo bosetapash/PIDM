@@ -7,6 +7,7 @@ export interface Category {
   module: ModuleType;
   icon?: string;
   custom_fields?: string; // JSON string
+  uid: string;
 }
 
 export interface Item {
@@ -19,6 +20,8 @@ export interface Item {
   location_id?: string;
   notes?: string;
   metadata?: string; // JSON string
+  uid: string;
+  createdAt: string;
 }
 
 export interface Location {
