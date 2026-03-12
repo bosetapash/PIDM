@@ -1,0 +1,5 @@
+{
+  "name": "PIDM - Personal Inventory & Document Manager",
+  "description": "A comprehensive personal inventory and document manager with a hierarchical category system, physical inventory tracking, digital assets, document vault, grocery management, and expense tracking.",
+  "requestFramePermissions": []
+}
