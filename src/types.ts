@@ -1,4 +1,4 @@
-export type ModuleType = 'inventory' | 'documents' | 'groceries' | 'digital' | 'expenses';
+export type ModuleType = 'inventory' | 'documents' | 'groceries' | 'digital' | 'expenses' | 'locations';
 
 export interface Category {
   id: string;

@@ -40,6 +40,45 @@ import {
 import { auth, db, googleProvider } from './firebase';
 import { Category, Item, ModuleType } from './types';
 
+const DEFAULT_CATEGORIES = [
+  // Physical Inventory
+  { name: 'Electronics', module: 'inventory', sub: ['Computers', 'Phones', 'Accessories'], subSub: { 'Computers': ['Laptops', 'Desktops'] } },
+  { name: 'Books', module: 'inventory', sub: ['Classics', 'Mystery', 'Historical', 'Non-fiction'], subSub: { 'Classics': ['Russian Classics', 'British Classics'] } },
+  { name: 'Furniture', module: 'inventory' },
+  { name: 'Appliances', module: 'inventory' },
+  { name: 'Clothing', module: 'inventory' },
+  { name: 'Kitchen Items', module: 'inventory' },
+  { name: 'Tools', module: 'inventory' },
+  { name: 'Vehicles', module: 'inventory' },
+  
+  // Document Vault
+  { name: 'Identity', module: 'documents', sub: ['Passport', 'Aadhaar', 'PAN'] },
+  { name: 'Financial', module: 'documents', sub: ['Bank Accounts', 'Insurance', 'Tax'] },
+  { name: 'Medical', module: 'documents', sub: ['Prescriptions', 'Reports'] },
+  { name: 'Property', module: 'documents' },
+  
+  // Grocery Inventory
+  { name: 'Grains', module: 'groceries', sub: ['Rice', 'Wheat'] },
+  { name: 'Vegetables', module: 'groceries', sub: ['Leafy', 'Root'] },
+  { name: 'Dairy', module: 'groceries', sub: ['Milk', 'Cheese', 'Butter'] },
+  { name: 'Snacks', module: 'groceries' },
+  
+  // Digital Assets
+  { name: 'Software', module: 'digital' },
+  { name: 'Subscriptions', module: 'digital' },
+  { name: 'Domains', module: 'digital' },
+  { name: 'Licenses', module: 'digital' },
+  
+  // Expense Tracker
+  { name: 'Household', module: 'expenses', sub: ['Groceries', 'Utilities', 'Maintenance'] },
+  { name: 'Transportation', module: 'expenses' },
+  { name: 'Subscriptions', module: 'expenses' },
+  { name: 'Miscellaneous', module: 'expenses' },
+  
+  // Location Manager
+  { name: 'Home', module: 'locations', sub: ['Kitchen', 'Bedroom', 'Study'], subSub: { 'Kitchen': ['Pantry', 'Refrigerator'], 'Bedroom': ['Wardrobe', 'Drawer'] } },
+];
+
 // Firestore Error Handling
 enum OperationType {
   CREATE = 'create',
@@ -148,10 +187,47 @@ function MainApp() {
     { code: 'JPY', symbol: '¥' },
   ];
 
+  const seedUserCategories = async (userId: string) => {
+    const categoriesRef = collection(db, 'categories');
+    const q = query(categoriesRef, where('uid', '==', userId));
+    const snapshot = await getDocs(q);
+    
+    if (snapshot.empty) {
+      console.log("Seeding default categories for user:", userId);
+      
+      const createCategory = async (name: string, module: string, parentId: string | null = null) => {
+        const docRef = await addDoc(categoriesRef, {
+          name,
+          module,
+          parent_id: parentId,
+          uid: userId
+        });
+        return docRef.id;
+      };
+
+      for (const cat of DEFAULT_CATEGORIES) {
+        const parentId = await createCategory(cat.name, cat.module);
+        if (cat.sub) {
+          for (const subName of cat.sub) {
+            const subId = await createCategory(subName, cat.module, parentId);
+            if (cat.subSub && (cat.subSub as any)[subName]) {
+              for (const subSubName of (cat.subSub as any)[subName]) {
+                await createCategory(subSubName, cat.module, subId);
+              }
+            }
+          }
+        }
+      }
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
       setIsAuthReady(true);
+      if (user) {
+        seedUserCategories(user.uid);
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -277,6 +353,7 @@ function MainApp() {
     { id: 'groceries', name: 'Grocery Inventory', icon: ShoppingCart },
     { id: 'expenses', name: 'Expense Tracker', icon: CreditCard },
     { id: 'digital', name: 'Digital Assets', icon: Globe },
+    { id: 'locations', name: 'Location Manager', icon: MapPin },
   ];
 
   if (!isAuthReady) {

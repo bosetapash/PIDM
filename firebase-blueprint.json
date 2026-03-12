@@ -7,8 +7,8 @@
       "properties": {
         "id": { "type": "string" },
         "name": { "type": "string" },
-        "module": { "type": "string", "enum": ["inventory", "documents", "groceries", "expenses", "digital"] },
-        "parentId": { "type": "string", "description": "ID of the parent category for nested structures." },
+        "module": { "type": "string", "enum": ["inventory", "documents", "groceries", "expenses", "digital", "locations"] },
+        "parent_id": { "type": "string", "description": "ID of the parent category for nested structures." },
         "uid": { "type": "string", "description": "Owner's user ID." }
       },
       "required": ["name", "module", "uid"]
@@ -21,7 +21,7 @@
         "id": { "type": "string" },
         "name": { "type": "string" },
         "category_id": { "type": "string" },
-        "module": { "type": "string", "enum": ["inventory", "documents", "groceries", "expenses", "digital"] },
+        "module": { "type": "string", "enum": ["inventory", "documents", "groceries", "expenses", "digital", "locations"] },
         "brand": { "type": "string" },
         "price": { "type": "number" },
         "quantity": { "type": "number" },

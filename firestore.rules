@@ -21,15 +21,16 @@ service cloud.firestore {
     function isValidCategory(data) {
       return data.keys().hasAll(['name', 'module', 'uid']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
-             data.module in ['inventory', 'documents', 'groceries', 'expenses', 'digital'] &&
-             data.uid == request.auth.uid;
+             data.module in ['inventory', 'documents', 'groceries', 'expenses', 'digital', 'locations'] &&
+             data.uid == request.auth.uid &&
+             (!('parent_id' in data) || (data.parent_id == null || data.parent_id is string));
     }
     
     function isValidItem(data) {
       return data.keys().hasAll(['name', 'category_id', 'module', 'uid']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
              data.category_id is string &&
-             data.module in ['inventory', 'documents', 'groceries', 'expenses', 'digital'] &&
+             data.module in ['inventory', 'documents', 'groceries', 'expenses', 'digital', 'locations'] &&
              data.uid == request.auth.uid &&
              (!('price' in data) || data.price is number) &&
              (!('brand' in data) || (data.brand is string && data.brand.size() < 100));
