@@ -7,6 +7,7 @@ import {
   Globe, 
   MapPin, 
   Settings,
+  LogOut,
   Plus,
   Search,
   LayoutGrid,
@@ -162,6 +163,7 @@ function MainApp() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
 
   const [activeModule, setActiveModule] = useState<ModuleType>('inventory');
   const [categories, setCategories] = useState<Category[]>([]);
@@ -188,36 +190,41 @@ function MainApp() {
   ];
 
   const seedUserCategories = async (userId: string) => {
-    const categoriesRef = collection(db, 'categories');
-    const q = query(categoriesRef, where('uid', '==', userId));
-    const snapshot = await getDocs(q);
-    
-    if (snapshot.empty) {
-      console.log("Seeding default categories for user:", userId);
+    try {
+      const categoriesRef = collection(db, 'categories');
+      const q = query(categoriesRef, where('uid', '==', userId));
+      const snapshot = await getDocs(q);
       
-      const createCategory = async (name: string, module: string, parentId: string | null = null) => {
-        const docRef = await addDoc(categoriesRef, {
-          name,
-          module,
-          parent_id: parentId,
-          uid: userId
-        });
-        return docRef.id;
-      };
+      if (snapshot.empty) {
+        console.log("Seeding default categories for user:", userId);
+        
+        const createCategory = async (name: string, module: string, parentId: string | null = null) => {
+          const docRef = await addDoc(categoriesRef, {
+            name,
+            module,
+            parent_id: parentId,
+            uid: userId
+          });
+          return docRef.id;
+        };
 
-      for (const cat of DEFAULT_CATEGORIES) {
-        const parentId = await createCategory(cat.name, cat.module);
-        if (cat.sub) {
-          for (const subName of cat.sub) {
-            const subId = await createCategory(subName, cat.module, parentId);
-            if (cat.subSub && (cat.subSub as any)[subName]) {
-              for (const subSubName of (cat.subSub as any)[subName]) {
-                await createCategory(subSubName, cat.module, subId);
+        for (const cat of DEFAULT_CATEGORIES) {
+          const parentId = await createCategory(cat.name, cat.module);
+          if (cat.sub) {
+            for (const subName of cat.sub) {
+              const subId = await createCategory(subName, cat.module, parentId);
+              if (cat.subSub && (cat.subSub as any)[subName]) {
+                for (const subSubName of (cat.subSub as any)[subName]) {
+                  await createCategory(subSubName, cat.module, subId);
+                }
               }
             }
           }
         }
+        console.log("Seeding completed successfully");
       }
+    } catch (error) {
+      console.error("Error seeding categories:", error);
     }
   };
 
@@ -263,15 +270,29 @@ function MainApp() {
   }, [user, selectedCategoryId]);
 
   const handleGoogleLogin = async () => {
+    if (isAuthenticating) return;
+    setIsAuthenticating(true);
+    setAuthError('');
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (error: any) {
+      console.error("Google Auth error:", error);
       setAuthError(error.message);
+    } finally {
+      setIsAuthenticating(false);
     }
   };
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAuthenticating) return;
+
+    if (password.length < 6) {
+      setAuthError('Password must be at least 6 characters long.');
+      return;
+    }
+
+    setIsAuthenticating(true);
     setAuthError('');
     try {
       if (authMode === 'login') {
@@ -280,7 +301,10 @@ function MainApp() {
         await createUserWithEmailAndPassword(auth, email, password);
       }
     } catch (error: any) {
+      console.error("Auth error:", error);
       setAuthError(error.message);
+    } finally {
+      setIsAuthenticating(false);
     }
   };
 
@@ -403,8 +427,10 @@ function MainApp() {
             {authError && <p className="text-red-500 text-xs">{authError}</p>}
             <button 
               type="submit"
-              className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200"
+              disabled={isAuthenticating}
+              className={`w-full py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 flex items-center justify-center gap-2 ${isAuthenticating ? 'opacity-70 cursor-not-allowed' : ''}`}
             >
+              {isAuthenticating && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>}
               {authMode === 'login' ? 'Login' : 'Sign Up'}
             </button>
           </form>
@@ -417,7 +443,8 @@ function MainApp() {
 
           <button 
             onClick={handleGoogleLogin}
-            className="w-full mt-6 py-3 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition-all flex items-center justify-center gap-2"
+            disabled={isAuthenticating}
+            className={`w-full mt-6 py-3 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition-all flex items-center justify-center gap-2 ${isAuthenticating ? 'opacity-70 cursor-not-allowed' : ''}`}
           >
             <Globe size={20} className="text-blue-500" />
             Continue with Google
@@ -519,6 +546,13 @@ function MainApp() {
             <Settings size={20} />
             <span className="text-sm font-semibold">Settings</span>
           </button>
+          <button 
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-3 py-2 text-red-400 hover:bg-red-900/20 hover:text-red-300 rounded-xl transition-all"
+          >
+            <LogOut size={20} />
+            <span className="text-sm font-semibold">Logout</span>
+          </button>
         </div>
       </aside>
 
@@ -578,6 +612,29 @@ function MainApp() {
               <Plus size={18} />
               Add Item
             </button>
+            <div className="h-8 w-[1px] bg-gray-200 mx-2" />
+            <div className="flex items-center gap-3 pl-2">
+              <div className="flex flex-col items-end">
+                <span className="text-xs font-bold text-gray-800 truncate max-w-[120px]">
+                  {user?.displayName || user?.email?.split('@')[0]}
+                </span>
+                <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">
+                  Pro Account
+                </span>
+              </div>
+              {user?.photoURL ? (
+                <img 
+                  src={user.photoURL} 
+                  alt="Profile" 
+                  className="w-10 h-10 rounded-full border-2 border-white shadow-sm"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold border-2 border-white shadow-sm">
+                  {user?.email?.[0].toUpperCase()}
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
